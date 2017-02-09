@@ -1,3 +1,3 @@
 # Makers-Markdown
 
-Makers-Markdown is a utility which converts Makefile comments to Markdown
+A utility to extract comments from Makefile targets and generate Markdown documentation

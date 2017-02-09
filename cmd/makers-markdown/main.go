@@ -12,8 +12,8 @@ import (
 )
 
 type Makefile struct {
-	Source string
-	Targets []Target
+	Source  string
+	Targets *[]Target
 }
 
 type Target struct {
@@ -34,7 +34,7 @@ func getMatches(myExp *regexp.Regexp, s string) map[string]string {
 	return result
 }
 
-func extractTargets(lines []string) []Target {
+func extractTargets(lines []string) *[]Target {
 	// Regular expression to match Makefile targets
 	reTgt := regexp.MustCompile(`(?P<tgt>^[a-zA-Z0-9_-]+):(?P<prereqs>.*)`)	// Naive match, works for now
 	reComment := regexp.MustCompile(`^\s*#{1}(?P<markdown>.*)$`)
@@ -42,24 +42,25 @@ func extractTargets(lines []string) []Target {
 	scanning := true
 	targets := make([]Target, 0)
 
-	for _, s := range lines {
-		var target Target
+	var target Target
 
+	for _, s := range lines {
 		if scanning {
 			matches := getMatches(reTgt, s)
 			if tgt, ok := matches["tgt"]; ok {
 				target = Target {
 					Name: tgt,
+					Markdown: "",
 				}
 
 				// Highlight the prerequisite targets
 				if prereqs, ok := matches["prereqs"]; ok {
 					tgts := strings.Split(prereqs, " ")
 					if len(tgts) > 1 {
-						prereqs := make([]string, 0, 1)
+						//target.Prerequisites = make([]string, 0, 1)
 						for _, req := range tgts {
 							if len(req) > 0 {
-								prereqs = append(prereqs, req)
+								target.Prerequisites = append(target.Prerequisites, req)
 							}
 						}
 					}
@@ -77,32 +78,46 @@ func extractTargets(lines []string) []Target {
 			}
 
 			// Dropping through to here means we hit the end of the comments
+			if target.Markdown != "" {
+				targets = append(targets, target)
+			}
 			scanning = true
 		}
 	}
-	return targets
+	return &targets
 }
 
-func generateMarkdown(makefile Makefile, fOut *os.File) {
+func generateMarkdown(makefile *Makefile, fOut *os.File) {
 
-	fOut.WriteString(fmt.Sprintf("\n\n<!-- Generated on %s from %s -->\n", time.Now(), makefile))
+	fOut.WriteString("<!--\n")
+	fOut.WriteString(fmt.Sprintf("\tGenerated on:\t%s\n", time.Now()))
+	fOut.WriteString(fmt.Sprintf("\tFrom:\t%s\n", makefile.Source))
+	fOut.WriteString("\n\tDO NOT MANUALLY EDIT THIS FILE.\n\tYOUR CHANGES WILL BE LOST NEXT TIME IT'S GENERATED\n")
+	fOut.WriteString("-->\n\n")
 
-	for _, tgt := range makefile.Targets {
-		// Found a Makefile makefile, Output a header
-		fOut.WriteString(fmt.Sprintf("\n\n<a name=\"%s\">&nbsp;</a>\n", tgt ))
-		fOut.WriteString(fmt.Sprintf("# Target `%s`\n", tgt))
-		if len(tgt.Prerequisites) > 0 {
-			fOut.WriteString("Pre-Requisites: ")
-			for _, req := range tgt.Prerequisites {
-				if len(req) > 0 {
-					fOut.WriteString(fmt.Sprintf("<a href=\"#%s\">%s</a>\n", req, req))
+	if len(*makefile.Targets) > 0 {
+		fOut.WriteString("\n# Targets\n")
+		for _, tgt := range *makefile.Targets {
+			fOut.WriteString(fmt.Sprintf("1. <a href=\"#%s\">`%s`</a>\n", tgt.Name, tgt.Name))
+		}
+
+		for _, tgt := range *makefile.Targets {
+			fOut.WriteString(fmt.Sprintf("### <a name=\"%s\">`%s`</a>\n", tgt.Name, tgt.Name))
+			if len(tgt.Prerequisites) > 0 {
+				fOut.WriteString("Pre-Requisites: ")
+				for _, req := range tgt.Prerequisites {
+					if len(req) > 0 {
+						fOut.WriteString(fmt.Sprintf("<a href=\"#%s\">%s</a>\n", req, req))
+					}
 				}
 			}
+			fOut.WriteString(tgt.Markdown)
+			fOut.WriteString("\n---\n")
 		}
 	}
 }
 
-func processMakefile(makefile, outdir, outfile  string) error {
+func parseMakefile(makefile, outdir, outfile  string) error {
 	buf, err := ioutil.ReadFile(makefile)
 	if err != nil {
 		return err
@@ -122,7 +137,7 @@ func processMakefile(makefile, outdir, outfile  string) error {
 	}
 	defer fOut.Close()
 
-	generateMarkdown(mk, fOut)
+	generateMarkdown(&mk, fOut)
 	return nil
 }
 
@@ -135,10 +150,18 @@ func exists(path string) (bool, error) {
 }
 
 func parseArgs(c *cli.Context) error {
-	target := c.String("target")
+	makefile := c.String("makefile")
 	outdir := c.String("outdir")
 
-	fmt.Printf("Processing %s and outputting to %s\n", target, outdir)
+	fmt.Printf("Processing %s and outputting to %s\n", makefile, outdir)
+
+	fileExists, err := exists(makefile)
+	if err != nil {
+		return err
+	}
+	if !fileExists {
+		return fmt.Errorf("Input file does not exist: '%s'", makefile)
+	}
 
 	dirExists, err := exists(outdir)
 	if err != nil {
@@ -150,7 +173,7 @@ func parseArgs(c *cli.Context) error {
 		}
 	}
 
-	if err := processMakefile(target, outdir, "README.md"); err != nil {
+	if err := parseMakefile(makefile, outdir, "README.md"); err != nil {
 		return err
 	}
 
