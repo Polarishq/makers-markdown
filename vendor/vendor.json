@@ -1,0 +1,13 @@
+{
+	"comment": "",
+	"ignore": "test",
+	"package": [
+		{
+			"checksumSHA1": "1keN4Q9F8uHk/Gt5YXG0oCEecKM=",
+			"path": "github.com/urfave/cli",
+			"revision": "347a9884a87374d000eec7e6445a34487c1f4a2b",
+			"revisionTime": "2017-01-28T21:39:59Z"
+		}
+	],
+	"rootPath": "github.com/declanshanaghy/makers-mark"
+}

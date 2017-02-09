@@ -1,0 +1,19 @@
+# Various scratch files
+tmp
+coverage.out
+*coverprofile*
+bin
+*.DS_Store
+*.bak
+
+# Project files
+.idea
+*.iml
+.vscode*
+
+# Secrets
+*.aes
+*secret*
+
+# Generated files
+cover.html
