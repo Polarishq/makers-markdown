@@ -101,6 +101,8 @@ func generateMarkdown(makefile *Makefile, fOut *os.File) {
 			fOut.WriteString(fmt.Sprintf("1. <a href=\"#%s\">`%s`</a>\n", tgt.Name, tgt.Name))
 		}
 
+		fOut.WriteString("\n\n___\n\n\n")
+
 		for _, tgt := range *makefile.Targets {
 			fOut.WriteString(fmt.Sprintf("### <a name=\"%s\">`%s`</a>\n", tgt.Name, tgt.Name))
 			if len(tgt.Prerequisites) > 0 {
