@@ -52,7 +52,7 @@ func extractTargets(lines []string) *[]Target {
 					Name:     tgt,
 					Markdown: "",
 					// Assumes target name is safe for filenames
-					Filename: fmt.Sprintf("%03d_%s.md", len(targets) + 1, tgt),
+					Filename: fmt.Sprintf("%s.md", tgt),
 				}
 
 				// Highlight the prerequisite targets
@@ -226,7 +226,6 @@ func main() {
 	app := cli.NewApp()
 	app.Name = "Makers Markdown"
 	app.HelpName = "makers-markdown"
-	app.Usage = "feck"
 	app.Description = "Generate markdown documentation from comments in a Makefile"
 	app.Action = parseArgs
 
@@ -238,7 +237,7 @@ func main() {
 		},
 		cli.StringFlag{
 			Name: "outdir",
-			Value: "./docs",
+			Value: "./makedocs",
 			Usage: "The directory in which to write output",
 		},
 		cli.BoolFlag{
