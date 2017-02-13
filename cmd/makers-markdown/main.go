@@ -17,9 +17,9 @@ type Makefile struct {
 }
 
 type Target struct {
-	Name string
-	Prerequisites []string
-	Markdown string
+	Name               string
+	Prerequisites      []string
+	Filename, Markdown string
 }
 
 func getMatches(myExp *regexp.Regexp, s string) map[string]string {
@@ -49,8 +49,10 @@ func extractTargets(lines []string) *[]Target {
 			matches := getMatches(reTgt, s)
 			if tgt, ok := matches["tgt"]; ok {
 				target = Target {
-					Name: tgt,
+					Name:     tgt,
 					Markdown: "",
+					// Assumes target name is safe for filenames
+					Filename: fmt.Sprintf("%03d_%s.md", len(targets) + 1, tgt),
 				}
 
 				// Highlight the prerequisite targets
@@ -87,59 +89,93 @@ func extractTargets(lines []string) *[]Target {
 	return &targets
 }
 
-func generateMarkdown(makefile *Makefile, fOut *os.File) {
+func generateMarkdown(makefile *Makefile, outdir, outfile string, split, merge bool) error {
+	var fMergeOut *os.File
+	var err error
 
-	fOut.WriteString("<!--\n")
-	fOut.WriteString(fmt.Sprintf("\tGenerated on:\t%s\n", time.Now()))
-	fOut.WriteString(fmt.Sprintf("\tFrom:\t%s\n", makefile.Source))
-	fOut.WriteString("\n\tDO NOT MANUALLY EDIT THIS FILE.\n\tYOUR CHANGES WILL BE LOST NEXT TIME IT'S GENERATED\n")
-	fOut.WriteString("-->\n\n")
+	header := "<!--\n";
+	header += fmt.Sprintf("\tGenerated on:\t%s\n", time.Now());
+	header += fmt.Sprintf("\tFrom:\t%s\n", makefile.Source);
+	header += "\n\tDO NOT MANUALLY EDIT THIS FILE.\n\tYOUR CHANGES WILL BE LOST NEXT TIME IT'S GENERATED\n";
+	header += "-->\n\n";
 
-	if len(*makefile.Targets) > 0 {
-		fOut.WriteString("\n# Targets\n")
-		for _, tgt := range *makefile.Targets {
-			fOut.WriteString(fmt.Sprintf("1. <a href=\"#%s\">`%s`</a>\n", tgt.Name, tgt.Name))
-		}
-
-		fOut.WriteString("\n\n___\n\n\n")
-
-		for _, tgt := range *makefile.Targets {
-			fOut.WriteString(fmt.Sprintf("### <a name=\"%s\">`%s`</a>\n", tgt.Name, tgt.Name))
-			if len(tgt.Prerequisites) > 0 {
-				fOut.WriteString("Pre-Requisites: ")
-				for _, req := range tgt.Prerequisites {
-					if len(req) > 0 {
-						fOut.WriteString(fmt.Sprintf("<a href=\"#%s\">%s</a>\n", req, req))
-					}
-				}
-			}
-			fOut.WriteString(tgt.Markdown)
-			fOut.WriteString("\n---\n")
-		}
-	}
-}
-
-func parseMakefile(makefile, outdir, outfile  string) error {
-	buf, err := ioutil.ReadFile(makefile)
-	if err != nil {
-		return err
-	}
-
-	content := string(buf)
-	lines := strings.Split(content, "\n")
-	mk := Makefile{
-		Source: makefile,
-		Targets: extractTargets(lines),
-	}
-
-	fOut, err := os.OpenFile(fmt.Sprintf("%s/%s", outdir, outfile),
+	fMergeOut, err = os.OpenFile(fmt.Sprintf("%s/%s", outdir, outfile),
 		os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0666)
 	if err != nil {
 		return err
 	}
-	defer fOut.Close()
+	defer fMergeOut.Close()
 
-	generateMarkdown(&mk, fOut)
+	fMergeOut.WriteString(header)
+	if len(*makefile.Targets) > 0 {
+		fMergeOut.WriteString("\n# Targets\n")
+		for _, tgt := range *makefile.Targets {
+			if merge {
+				fMergeOut.WriteString(fmt.Sprintf("1. <a href=\"#%s\">`%s`</a>\n", tgt.Name, tgt.Name))
+			} else {
+				fMergeOut.WriteString(fmt.Sprintf("1. <a href=\"%s\">`%s`</a>\n", tgt.Filename, tgt.Name))
+			}
+		}
+		fMergeOut.WriteString("\n\n___\n\n\n")
+	}
+
+	for _, tgt := range *makefile.Targets {
+		if split {
+			fTgt, err := os.OpenFile(fmt.Sprintf("%s/%s", outdir, tgt.Filename),
+				os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0666)
+			if err != nil {
+				return err
+			}
+			defer fTgt.Close()
+			fTgt.WriteString(header)
+			processTarget(&tgt, fTgt)
+		}
+
+		if merge {
+			processTarget(&tgt, fMergeOut)
+		}
+	}
+
+	return nil
+}
+
+func processTarget(tgt *Target, fOut *os.File) {
+	fOut.WriteString(fmt.Sprintf("### <a name=\"%s\">`%s`</a>\n", tgt.Name, tgt.Name))
+	if len(tgt.Prerequisites) > 0 {
+		fOut.WriteString("Pre-Requisites: ")
+		for _, req := range tgt.Prerequisites {
+			if len(req) > 0 {
+				fOut.WriteString(fmt.Sprintf("<a href=\"#%s\">%s</a>\n", req, req))
+			}
+		}
+	}
+	fOut.WriteString(tgt.Markdown)
+	fOut.WriteString("\n---\n")
+}
+
+func processMakefile(infile, outdir, outfile  string, split, merge bool) error {
+	buf, err := ioutil.ReadFile(infile)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Processing %s and outputting to %s\n", infile, outdir)
+
+	content := string(buf)
+	lines := strings.Split(content, "\n")
+	makefile := Makefile{
+		Source: infile,
+		Targets: extractTargets(lines),
+	}
+
+	if len(*makefile.Targets) > 0 {
+		if err = generateMarkdown(&makefile, outdir, outfile, split, merge); err != nil {
+			return err
+		}
+	} else {
+		return fmt.Errorf("Makefile (%s) contains no documented targets", infile)
+	}
+
 	return nil
 }
 
@@ -154,8 +190,12 @@ func exists(path string) (bool, error) {
 func parseArgs(c *cli.Context) error {
 	makefile := c.String("makefile")
 	outdir := c.String("outdir")
+	split := c.Bool("split")
+	merge := c.BoolT("merge")
 
-	fmt.Printf("Processing %s and outputting to %s\n", makefile, outdir)
+	if !split && !merge {
+		return fmt.Errorf("You must enable either split or merge, otherwise there will be no output!")
+	}
 
 	fileExists, err := exists(makefile)
 	if err != nil {
@@ -175,7 +215,7 @@ func parseArgs(c *cli.Context) error {
 		}
 	}
 
-	if err := parseMakefile(makefile, outdir, "README.md"); err != nil {
+	if err := processMakefile(makefile, outdir, "README.md", split, merge); err != nil {
 		return err
 	}
 
@@ -184,6 +224,10 @@ func parseArgs(c *cli.Context) error {
 
 func main() {
 	app := cli.NewApp()
+	app.Name = "Makers Markdown"
+	app.HelpName = "makers-markdown"
+	app.Usage = "feck"
+	app.Description = "Generate markdown documentation from comments in a Makefile"
 	app.Action = parseArgs
 
 	app.Flags = []cli.Flag {
@@ -196,6 +240,14 @@ func main() {
 			Name: "outdir",
 			Value: "./docs",
 			Usage: "The directory in which to write output",
+		},
+		cli.BoolFlag{
+			Name: "split",
+			Usage: "Indicates whether or not to split each target into separate files",
+		},
+		cli.BoolTFlag{
+			Name: "merge",
+			Usage: "Indicates whether or not to merge all the targets files into 1 resultant output file",
 		},
 	}
 
