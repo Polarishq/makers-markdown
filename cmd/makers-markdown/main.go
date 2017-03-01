@@ -145,7 +145,7 @@ func processTarget(tgt *Target, fOut *os.File) {
 		fOut.WriteString("Pre-Requisites: ")
 		for _, req := range tgt.Prerequisites {
 			if len(req) > 0 {
-				fOut.WriteString(fmt.Sprintf("<a href=\"#%s\">%s</a>\n", req, req))
+				fOut.WriteString(fmt.Sprintf("<a href=\"#%s\">`%s`</a>\n", req, req))
 			}
 		}
 	}
